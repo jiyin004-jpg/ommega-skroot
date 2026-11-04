@@ -95,6 +95,11 @@ public:
     void onPrepareCreate(const char* root_key, const char* module_private_dir, uint32_t port) override {
         auto& ctx = webui_context();
         if (module_private_dir) ctx.mod_dir = module_private_dir;
+        if (root_key) ctx.root_key = root_key;
+        // WebUI 是管理器点“打开”时才 start_module_web_ui_server_async 拉起的（端口由 SDK 分配），
+        // 完全可能不在模块入口那个 dlopen 实例/进程里，所以 token 在这里再兜一层。
+        if (ctx.token.empty()) ctx.token = random_hex(16);
+        if (ctx.version.empty()) ctx.version = OMMEGA_MOD_VERSION;
         ctx.port = port;
         log_line("webui ready on port %u, dir=%s", port, ctx.mod_dir.c_str());
     }

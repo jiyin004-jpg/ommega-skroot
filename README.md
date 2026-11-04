@@ -18,8 +18,8 @@ Ommega 的 **SKRoot Pro 版**模块。同一套 A 端业务（远程 TEE 出证 
 **没验证的**（没有 SKRoot Pro 实机，没有 SKP 密钥，装不上去）：
 
 - 模块能不能被管理器正常安装、加载、跑起来；
-- SKRoot 的 shell 域（`u:r:shell:s0` + 内核提权）下，`ommega-inject` 的 ptrace
-  注入能不能打到 keystore2 —— 这是本版最大的未知点，见 `docs/PORTING.md`；
+- keystore2 的 ptrace 能不能打进去（SELinux 这一关按官方源码看是过了的，剩下是
+  `PR_SET_DUMPABLE` / 厂商 LSM 那一关），见 `docs/PORTING.md`；
 - `insmod pathmask*.ko`、`mount --bind` 改权限 XML、`chcon` 这些在 SKRoot 下是否被允许；
 - WebUI 端口、token 注入、`/api/exec` 在真机 WebView 里的表现。
 

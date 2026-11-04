@@ -4,13 +4,14 @@
 
 ```
 init
- └─ SKRoot 提权内核（patch 过的，shell 域 root）
-     └─ supervisor（开机早期拉起）
-         └─ dlopen("/data/<key16>/modules/<id32>/libommega_skroot.so")
+ └─ SKRoot 提权内核（patch 过的）
+     └─ autorun（约 1MB 的 ELF，由内核 patch 在开机早期拉起）
+         ├─ 内置模块：module_selinux（patch kernel switch）、module_tombstone_purge …
+         └─ 批量加载用户模块：dlopen + dlsym("__skroot_module_main_18fdf393885363712349ef3de5411bd5")
              ├─ skroot_module_main(root_key, module_private_dir)   ← 同步，要快
-             │   ├─ fork + exec: sh OmmegaCore/service.sh --boot    ← 同步等（≤20s）
+             │   ├─ fork + exec: sh OmmegaCore/service.sh --boot    ← 同步等（≤8s）
              │   └─ fork + exec: sh OmmegaCore/service.sh --late    ← 后台
-             └─ SKROOT_MODULE_WEB_UI 注册的 HTTP 服务（面板）
+             └─ SKROOT_MODULE_WEB_UI 注册的 HTTP 服务（面板，点开时才起）
 ```
 
 要点：
@@ -22,6 +23,12 @@ init
   `module_private_dir` 拼路径。
 - 模块名片（名字/版本/描述/id32）编在 `.so` 里，没有 `module.prop` 参与加载；
   `OmmegaCore/module.prop` 只给面板读版本用。
+- 模块入口符号是 SDK 宏生成的混淆名；autorun 打完会打一行
+  `[Module End] name=..., skroot_module_main=..., elapsed=... ms`，跑失败是
+  `[Module Error] name=..., error=...`。所以入口里别干重活，我们只 fork。
+- 面板不是常驻的：管理器点“打开”时才 `start_module_web_ui_server_async(root_key, id32, &port)`，
+  端口由 SDK 分配。所以 WebUI handler 不能假设自己和模块入口在同一个 dlopen 实例里，
+  token 在 `onPrepareCreate` 里还要兜一层。
 
 ## 2. 两阶段启动
 
@@ -42,14 +49,29 @@ SKRoot 模块只有一次入口。A 端原本依赖 Magisk 的 `post-fs-data`（
 
 ## 3. 权限模型
 
-- 模块宿主进程是 root，但 SELinux 域是 **shell**（`u:r:shell:s0`）；
-- 文件读写看 unix 权限 + SELinux type：`/data/misc/ommega` 是 `system_data_file`，
-  keystore2（uid 1017）要能读，靠目录属主/权限 + 一条 allow 规则；
-- SKRoot 没有 `magiskpolicy`，`sepolicy_apply.sh` 的探测顺序是
-  `ksud → magiskpolicy → 模块自带 ommega-policy`，都失败就只记日志；
-- ptrace 注入：Magisk 版靠 magiskd 域 + sepolicy.rule 里给 `crash_dump` 的 allow；
-  SKRoot 下走的是它自己的注入通道（官方 TEESimulator 移植示例也是
-  `allow crash_dump keystore process *`），**能不能打通要真机验**。
+SKRoot Pro 有两条提权路径，别混在一起：
+
+- **App 走 `/system/bin/su`**：uid 0，但 SELinux 域是 shell（`u:r:shell:s0`，
+  skroot-zygisk 在一加/OPPO 上实测）。这是给第三方 App 用的那条。
+- **内核 patch 这条（模块宿主、CVE 提权）**：uid 0 + 全 capability；ghostlock 提权
+  （`cve2026_43499_ghostlock_src_v2/src/root.c`）除了把 cred 的 uid/gid 清零、caps 拉满，
+  还会改写 cred 的 SELinux sid。更关键的是：SKRoot 对 `avc_denied()` 做了“零触碰”patch——
+  把所有 `ret` 换成跳到代码洞，洞里判定当前进程是不是 **root-like**
+  （`euid==0 && securebits==0 && capability 全满`），是就直接返回 0（放行），
+  否则按原逻辑拒绝。也就是说 **root-like 进程在 SKRoot 下基本等于 SELinux 免疫**。
+
+依据（官方公开源码）：
+
+- `Lite_version/…/patch_tool/patch_pro_selinux.cpp`、`patch_avc_denied.cpp`、
+  `patch_current_avc_check.cpp`；
+- `Pro(众测开放中)/src/PermissionManager/cve2026_43499_ghostlock_src_v2/src/root.c`
+  里的 `patch_cred_identity` / `patch_cred_sid`。
+
+对 ommega A 端的含义：模块壳 fork 出来的脚本和守护继承模块宿主的 uid/caps，理论上是
+root-like，所以读 `/data/misc/ommega`、`chcon`、`mount --bind`、`insmod`、ptrace 这些
+SELinux 检查应该都被 avc patch 放过去。**仍然要看的是内核里非 SELinux 的门**：
+keystore2 的 `PR_SET_DUMPABLE`、厂商自己加的 LSM/hook、`/proc/pid/mem` 被封那类
+（skroot-zygisk 在某 OPPO 上遇到过 mem 全 I/O error），这些只能真机验。
 
 ## 4. 面板怎么接过来的
 

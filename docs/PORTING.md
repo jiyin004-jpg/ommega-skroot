@@ -17,7 +17,7 @@
 | 10 | `insmod pathmask*.ko` 隐藏 SoterService | `kmod-loader.sh` 原样保留，失败写 `conf/pathmask.state` | 待验证（SKRoot 下 insmod 未测） |
 | 11 | `mount --bind` 改权限 XML（hide_strongbox / hide_device_ids） | `boot.sh` 原逻辑保留，失败只记日志 | 待验证（shell 域 mount 权限） |
 | 12 | `chcon`（给 payload/二进制打 system_file 标签） | 脚本里都是 `chcon ... || true`，失败不阻塞 | 待验证 |
-| 13 | ptrace 注入 keystore2（`ommega-inject`） | 二进制不变，注入权限靠 SKRoot 的注入通道 | **待验证（本版最大未知点）** |
+| 13 | ptrace 注入 keystore2（`ommega-inject`） | 二进制不变；SELinux 关按源码看已经过了（root-like 全放行），剩下是 dumpable/LSM | **待验证（只剩内核非 SELinux 的门）** |
 | 14 | 早启动抢 keystore2 的解锁窗口 | `--boot` 同步跑，但模块加载时机在 zygote 前后取决于机型 | 待验证 |
 | 15 | `am start-service` 拉 SOTER 宿主 | 原逻辑保留（root 下 `am` 可用） | 待验证 |
 | 16 | adbr 公网调试通道 | `adbr-daemon.sh` + `libs/arm64-v8a/adbrd` 原样带 | 待验证 |
@@ -41,11 +41,22 @@
 代价是要在内核态写过滤逻辑，且不同内核系列要选对 hook 点（官方示例已经处理了这一点）。
 没有实机之前不落这段代码——内核 hook 写错了会直接影响开机。
 
-### 13. ptrace 注入的兜底
+### 13. ptrace 注入还剩什么门
 
-如果 SKRoot 下 `ommega-inject` 打不进 keystore2，按优先级：
+先前担心的 SELinux 这条，看官方 patch 源码基本已经不用担心：
 
-1. 先试 SKRoot 自带的注入器（官方 TEESimulator / TrickyStore 移植就是这条路，
-   `sepolicy.rule` 里给 `crash_dump keystore process *`）；
-2. 再看 SKRoot 的内核 patch 是否已放开 shell 域对 keystore 的 `process_vm_writev`；
-3. 都不行就说明这条路在 SKRoot 上需要单独做一个注入器，属于第二阶段工作。
+- `patch_pro_selinux.cpp` / `patch_avc_denied.cpp`：把 `avc_denied()` 里每个 `ret`
+  换成跳到代码洞，洞里判定 root-like（`euid==0 && securebits==0 && 全 capability`），
+  是就返回 0 放行；
+- `root.c` 提权时把 cred 的 uid/gid/caps 拉到满。
+
+所以模块壳 fork 出去的子进程只要继承了 uid 0 + 全 caps，对 keystore2 的
+`process_vm_writev` / ptrace 就不会被 SELinux 拦。剩下要真机看的是：
+
+1. keystore2 自己有没有 `PR_SET_DUMPABLE=0`（有的话 `ptrace_may_access` 直接失败）；
+2. 厂商有没有额外 LSM/hook 拦跨进程读写（skroot-zygisk 在某 OPPO 上遇到过
+   `/proc/<pid>/mem` 全 I/O error）；
+3. 注入器本身在 SKRoot 的 `patch_do_execve` / seccomp 环境里行为是否变化。
+
+如果这三条里有卡住的，再退到 SKRoot 自带的注入器（官方 TEESimulator / TrickyStore
+移植示例走的就是 crash_dump 域那条）。
