@@ -6,24 +6,26 @@ Ommega 的 **SKRoot Pro 版**模块。同一套 A 端业务（远程 TEE 出证 
 跟 ommega 主仓库的关系：业务二进制（`keymint` / `ommega-inject` / `resetprop` /
 `ommega-policy`）仍由 ommega 构建，这里只负责"取过来、摆进去、拉起来、给面板"。
 
-## 现状（先说清楚）
+## 现状
 
-已验证的：
+已在 SKRoot Pro 实机上跑通的部分：
 
-- 模块壳 `libommega_skroot.so` 能用 NDK 交叉编出来（arm64-v8a，静态链 SKRoot SDK）；
-- 能打成 SKRoot 认的 zip（`libommega_skroot.so` + `webroot/` + `OmmegaCore/`），
-  业务二进制、keybox、脚本都齐，构建脚本会自检文件名和模块名片；
-- 全部 shell 脚本过了 `dash -n` 语法检查。
+- 模块能被管理器安装、加载，`--boot` / `--late` 两段按预期拉起，
+  模块目录位于 `/data/<root_key 前16位>/modules/<id32>/OmmegaCore`；
+- 注入器能把 `keymint` 的载荷注入 keystore2（`injecting into keystore2 pid=…`，退出码 0），
+  出证链路可用：带挑战的密钥生成能拿到完整证书链；
+- 证书中的应用标识（包名、版本号、签名摘要）与系统实现一致；
+- WebUI 能加载，`/api/exec`、`/api/packages` 可用；
+- adbr 控制通道可用（`shell` / `bg` 作业 / 端口转发）。
 
-**没验证的**（没有 SKRoot Pro 实机，没有 SKP 密钥，装不上去）：
+尚未验证、需要真机确认的：
 
-- 模块能不能被管理器正常安装、加载、跑起来；
-- keystore2 的 ptrace 能不能打进去（SELinux 这一关按官方源码看是过了的，剩下是
-  `PR_SET_DUMPABLE` / 厂商 LSM 那一关），见 `docs/PORTING.md`；
-- `insmod pathmask*.ko`、`mount --bind` 改权限 XML、`chcon` 这些在 SKRoot 下是否被允许；
-- WebUI 端口、token 注入、`/api/exec` 在真机 WebView 里的表现。
+- SOTER 接管（`soter_inject` 默认关闭，打开后需确认宿主注入与一次完整调用）；
+- `insmod pathmask*.ko`、`mount --bind` 修改权限 XML、`chcon` 在 SKRoot 下的允许范围；
+- 逐机型差异（不同 ROM 的 SELinux 标签、keystore2 注入时机）。
 
-没有实机之前，README 里不会写"支持某机型"，安装包也不进 Release。
+发布包在 GitHub Releases 提供，版本号与 `VERSION` 一致；说明中只陈述已实机验证的功能，
+不逐一列举支持机型。
 
 ## 跟 Magisk/KernelSU 版的差别
 
