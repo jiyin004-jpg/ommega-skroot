@@ -1,0 +1,11 @@
+# 构建产物
+dist/
+module/libs/
+module/obj/
+*.o
+*.so.tmp
+
+# 本地辅助
+.tmp-*
+__pycache__/
+*.pyc

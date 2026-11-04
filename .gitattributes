@@ -1,0 +1,7 @@
+# 脚本一律 LF：adb / Android 上的 sh 对 CRLF 很敏感
+*.sh text eol=lf
+daemon-injector text eol=lf
+* text=auto
+*.a binary
+*.ko binary
+*.png binary
