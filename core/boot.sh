@@ -104,7 +104,9 @@ if [ ! -x "$RESETPROP_BIN" ]; then
   fi
   unset rp_abi
 fi
-resetprop() { "$RESETPROP_BIN" "$@"; }
+# SKRoot 下 `__system_property_set`（走 property_service）会被拒（实测 -1），
+# 必须走直写属性区。resetprop 的 -n/--skip-svc 就是干这个的。
+resetprop() { "$RESETPROP_BIN" -n "$@"; }
 
 # persist.* 要带 -p：不带的话只改内存属性区，init 落在 /data/property/ 的那份镜像
 # 不会跟着变，两边一对就露（检测项 device.property.persistent_suspicious）。
@@ -202,7 +204,7 @@ debug_logging_enabled() {
 if debug_logging_enabled; then
   mkdir -p "$LOG_DIR" "$APP_LOG_DIR" 2>/dev/null
 fi
-mkdir -p "$STATE_DIR"
+mkdir -p "$STATE_DIR" "$STATE_DIR/run" "$STATE_DIR/conf" "$STATE_DIR/db"
 rm -f "$RUN_DIR/keymint-daemon.pid" "$RUN_DIR/injector-daemon.pid"
 
 # 只落文件，不再往 stdout 打（那会进管理器的日志，也是系统日志）。

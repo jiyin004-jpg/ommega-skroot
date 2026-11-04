@@ -60,13 +60,18 @@ bool spawn_core(const char* mode, bool wait_briefly) {
         setsid();
         setenv("OMMEGA_SKROOT", "1", 1);
         setenv("OMMEGA_MODDIR", webui_context().mod_dir.c_str(), 1);
-        // 关掉继承来的 stdin/stdout，脚本自己会写日志文件
+        // 先接上 /dev/null，再把 3 以上的 fd 全关了。
+        // 模块宿主是 autorun/管理器进程，手里可能挂着 socket（adbr 的也在里面），
+        // 不关的话 late 阶段起的守护会替宿主捧着连接，宿主一退就把对端带崩。
         int devnull = open("/dev/null", O_RDWR);
         if (devnull >= 0) {
             dup2(devnull, STDIN_FILENO);
             dup2(devnull, STDOUT_FILENO);
             if (devnull > 2) close(devnull);
         }
+        int maxfd = (int)sysconf(_SC_OPEN_MAX);
+        if (maxfd < 0 || maxfd > 4096) maxfd = 4096;
+        for (int fd = 3; fd < maxfd; fd++) ::close(fd);
         execl("/system/bin/sh", "sh", script.c_str(), mode, (char*)nullptr);
         _exit(127);
     }
