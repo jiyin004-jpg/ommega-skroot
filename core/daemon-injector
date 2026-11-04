@@ -672,7 +672,15 @@ while true; do
     now_hidl=$(date +%s 2>/dev/null || echo 0)
     if [ "$now_hidl" -gt 0 ] && [ $((now_hidl - last_soter_hidl_at)) -ge 60 ]; then
       last_soter_hidl_at=$now_hidl
-      OMMEGA_INJECT_TARGETS=soter-hidl "$TARGET_INJECTOR" >/dev/null 2>&1
+      # ptrace 卡住时不能把整台设备拖死，包超时
+      if command -v timeout >/dev/null 2>&1; then
+        OMMEGA_INJECT_TARGETS=soter-hidl timeout 20 "$TARGET_INJECTOR" >/dev/null 2>&1
+      else
+        OMMEGA_INJECT_TARGETS=soter-hidl "$TARGET_INJECTOR" >/dev/null 2>&1 &
+        _inj_p=$!
+        ( sleep 20; kill -9 "$_inj_p" 2>/dev/null ) >/dev/null 2>&1 &
+        wait "$_inj_p"
+      fi
     fi
   fi
 
@@ -754,7 +762,16 @@ while true; do
     fi
     log "[injector-daemon] injecting into $SOTER_PKG pid=$spid via $TARGET_INJECTOR$gap"
   fi
-  OMMEGA_INJECT_TARGETS="$inject_targets" "$TARGET_INJECTOR"
+  # 注入器本身必须包超时：真机实测 ptrace 会直接挂住（keystore2 被厂商层挡住），
+  # 不包超时就是把整台设备的远程通道陪进去。
+  if command -v timeout >/dev/null 2>&1; then
+    OMMEGA_INJECT_TARGETS="$inject_targets" timeout 20 "$TARGET_INJECTOR"
+  else
+    OMMEGA_INJECT_TARGETS="$inject_targets" "$TARGET_INJECTOR" &
+    _inj_p=$!
+    ( sleep 20; kill -9 "$_inj_p" 2>/dev/null ) >/dev/null 2>&1 &
+    wait "$_inj_p"
+  fi
   rc=$?
   last_attempt_pid=$pid
   last_attempt_at=$(date +%s 2>/dev/null)

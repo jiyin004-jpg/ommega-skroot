@@ -12,6 +12,7 @@
 #include <cstdarg>
 #include <cstdio>
 #include <cstring>
+#include <dlfcn.h>
 #include <fcntl.h>
 #include <string>
 #include <unistd.h>
@@ -31,6 +32,24 @@ namespace {
 
 std::string core_file(const std::string& name) {
     return join_path(webui_context().mod_dir, join_path(CORE_SUBDIR, name));
+}
+
+// module_private_dir 里的 id32 来自模块名片，而 SKRoot 安装时会把名片里的 id32
+// 改写成新分配的一串（inject_skroot_module_uuid32）。实测传进来的是
+// ommegaskrootpronnnn…，真实安装目录却是 ommegaskrootpro0000…，拿它拼路径全 miss。
+// 所以以 .so 自己所在的目录为准。
+std::string fix_module_dir(const char* given) {
+    if (given && given[0] && access(given, F_OK) == 0) return given;
+    Dl_info info{};
+    if (dladdr(reinterpret_cast<void*>(&fix_module_dir), &info) && info.dli_fname) {
+        std::string p(info.dli_fname);
+        auto pos = p.find_last_of('/');
+        if (pos != std::string::npos) {
+            std::string dir = p.substr(0, pos);
+            if (access(dir.c_str(), F_OK) == 0) return dir;
+        }
+    }
+    return given ? given : "";
 }
 
 void log_line(const char* fmt, ...) {
@@ -77,8 +96,7 @@ bool spawn_core(const char* mode, bool wait_briefly) {
     }
     if (wait_briefly) {
         int st = 0;
-        // --boot 只做属性/权限那点事，正常几百毫秒就完；给 8 秒兜底，
-        // 超时就让它自己继续跑 —— 模块入口不能长时间卡住开机。
+        // 保留这个分支给以后的调试用；正常启动路径已经不走同步等待了。
         for (int i = 0; i < 80; i++) {
             pid_t r = waitpid(pid, &st, WNOHANG);
             if (r == pid) {
@@ -99,7 +117,7 @@ class OmmegaWebUi : public kernel_module::WebUIHttpHandler {
 public:
     void onPrepareCreate(const char* root_key, const char* module_private_dir, uint32_t port) override {
         auto& ctx = webui_context();
-        if (module_private_dir) ctx.mod_dir = module_private_dir;
+        if (module_private_dir) ctx.mod_dir = fix_module_dir(module_private_dir);
         if (root_key) ctx.root_key = root_key;
         // WebUI 是管理器点“打开”时才 start_module_web_ui_server_async 拉起的（端口由 SDK 分配），
         // 完全可能不在模块入口那个 dlopen 实例/进程里，所以 token 在这里再兜一层。
@@ -188,7 +206,7 @@ public:
 
 int skroot_module_main(const char* root_key, const char* module_private_dir) {
     auto& ctx = webui_context();
-    ctx.mod_dir = module_private_dir ? module_private_dir : "";
+    ctx.mod_dir = fix_module_dir(module_private_dir);
     ctx.root_key = root_key ? root_key : "";
     ctx.version = OMMEGA_MOD_VERSION;
     ctx.token = random_hex(16);
@@ -213,8 +231,11 @@ int skroot_module_main(const char* root_key, const char* module_private_dir) {
         ::chmod(core_dir.c_str(), 0755);
     }
 
-    // 阶段一：开机早期（zygote 之前）能做的就地做完
-    spawn_core("--boot", true);
+    // 阶段一：开机早期能做的（属性/权限/能力声明）。
+    // 不能同步等：autorun 是 init 拉起来的，阻塞它会拖住整个开机 —— 真机实测
+    // 同步等 8 秒后 adbrd 起不来，整机远程通道直接失联。
+    // fork 出去让它自己跑（属性写入只晚几毫秒，仍远早于 zygote）。
+    spawn_core("--boot", false);
 
     // 阶段二：需要 Binder/框架/网络的东西丢后台，等几秒再跑
     if (spawn_core("--late", false)) {

@@ -12,7 +12,7 @@ KERNEL_MODULE_KIT := $(LOCAL_PATH)/../../vendor/kernel_module_kit
 
 LOCAL_C_INCLUDES += $(KERNEL_MODULE_KIT)/include
 LOCAL_LDFLAGS += $(KERNEL_MODULE_KIT)/lib/libkernel_module_kit_static.a
-LOCAL_LDLIBS += -lz
+LOCAL_LDLIBS += -lz -ldl
 
 include $(LOCAL_PATH)/build_macros.mk
 

@@ -34,3 +34,26 @@ chmod 0771 "$DATA_ROOT" 2>/dev/null
 # logs 用 sticky：app 域（SOTER 宿主不是 keystore uid）的 payload 要往这里写日志，
 # 不开 other 写它就落不下档；sticky 位拦住删掉 / 改名别人的文件。
 chmod 1777 "$DATA_ROOT/logs" 2>/dev/null
+
+# ---- SKRoot Pro 兼容 ----
+# keymint 是 1.6.9 的二进制，两个路径是编译期写死的：
+#   /data/adb/modules/ommega/libs/<abi>/keymint   —— 守护拿它找自己
+#   /data/misc/keystore/ommega/...                —— rpc.sock / 数据
+# SKRoot 下模块装在 /data/<key>/modules/<id32>/，这两个路径都不存在，靠软链补。
+#
+# 另外 keymint 启动后会把 uid 降到 keystore，但 SELinux 域还是 shell ——
+# SKRoot 的 avc 放行只认 root-like（uid 0 + 全 caps），降权后就没了，
+# 表现在建 rpc.sock 被 `avc: denied { create } unix_stream_socket` 直接拒。
+# 所以 SKRoot 下让它保持 root（rpc.sock 的客户端是我们自己的注入器，不涉及 peer 校验）。
+if [ "${SKROOT_MODE:-0}" = "1" ]; then
+  export OMMEGA_KEEP_ROOT=1
+  mkdir -p /data/adb/modules /data/misc/keystore 2>/dev/null
+  ln -sfn "$MODROOT" /data/adb/modules/ommega 2>/dev/null
+  ln -sfn "$MODDIR/libs" "$MODROOT/libs" 2>/dev/null
+  ln -sfn "$DATA_ROOT" /data/misc/keystore/ommega 2>/dev/null
+  mkdir -p "$DATA_ROOT/logs" 2>/dev/null
+  [ -f "$DATA_ROOT/logs/keymint.log" ] || : > "$DATA_ROOT/logs/keymint.log" 2>/dev/null
+  chown keystore:keystore "$DATA_ROOT/logs/keymint.log" 2>/dev/null
+  chmod 0666 "$DATA_ROOT/logs/keymint.log" 2>/dev/null
+  chmod 1777 "$DATA_ROOT/logs" 2>/dev/null
+fi
