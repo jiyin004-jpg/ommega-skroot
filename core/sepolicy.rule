@@ -129,3 +129,19 @@ allow { magisk ksu su system_file } default_android_service service_manager { ad
 
 allow keystore default_android_service service_manager find
 allow shell default_android_service service_manager find
+
+# ---- SKRoot Pro：unix socket 与会话（真机验证后补）----
+# keymint 以 root（shell 域）跑、payload 在 keystore2（keystore 域）里，
+
+# ---- SKRoot Pro：unix socket 与会话（真机验证后补）----
+# keymint 以 root（shell 域）跑、payload 在 keystore2（keystore 域）里，
+# 两边靠文件 rpc.sock + 抽象 socket ommega.soter.rpc 会合。
+allow shell keystore unix_stream_socket { create bind listen accept connect write read getattr setattr setopt ioctl shutdown getopt }
+allow keystore shell unix_stream_socket { connect write read getattr setattr setopt ioctl shutdown getopt }
+allow shell shell unix_stream_socket { create bind listen accept connect write read getattr setattr setopt ioctl shutdown getopt }
+allow keystore keystore unix_stream_socket { create bind listen accept connect write read getattr setattr setopt ioctl shutdown getopt }
+
+# AAID 的本地兜底要读 /data/system/packages.list
+allow shell system_data_file dir { search open read getattr }
+allow shell system_data_file file { open read getattr map }
+allow shell system_data_file lnk_file { read getattr }

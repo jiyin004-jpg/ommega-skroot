@@ -46,6 +46,9 @@ chmod 1777 "$DATA_ROOT/logs" 2>/dev/null
 # 表现在建 rpc.sock 被 `avc: denied { create } unix_stream_socket` 直接拒。
 # 所以 SKRoot 下让它保持 root（rpc.sock 的客户端是我们自己的注入器，不涉及 peer 校验）。
 if [ "${SKROOT_MODE:-0}" = "1" ]; then
+  # keymint 保持 root：降权后它绑不了 socket（avc 只对 root-like 放行），
+  # binder 线程池初始化也会直接 abort。AAID 那一步改成本地从 packages.list 造，
+  # 不再依赖只有 Keystore/Credstore 能调的 system provider。
   export OMMEGA_KEEP_ROOT=1
   mkdir -p /data/adb/modules /data/misc/keystore 2>/dev/null
   ln -sfn "$MODROOT" /data/adb/modules/ommega 2>/dev/null
