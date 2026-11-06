@@ -23,7 +23,7 @@
 #include "util.hpp"
 #include "webui.hpp"
 
-#define OMMEGA_MOD_VERSION "1.0.0"
+#define OMMEGA_MOD_VERSION "1.0.4"
 #define CORE_SUBDIR "OmmegaCore"
 
 using namespace ommega;

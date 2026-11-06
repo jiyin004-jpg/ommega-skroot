@@ -129,6 +129,24 @@ ommega_sepolicy_rules_present() {
   return 1
 }
 
+# 同一次 --check，但保留三种结果，给「复核别人的成功」用：
+#   present / missing / unknown
+# unknown 是连自带那份都没找到、根本判断不了 —— 这种时候按成功处理，别把正常的机器判成失败。
+ommega_sepolicy_rule_state() {
+  _ommega_policy_rule=$1
+  for _ommega_cand in $(_ommega_policy_bundled_candidates); do
+    _ommega_tool=$(_ommega_policy_resolve "$_ommega_cand") || continue
+    _ommega_policy_exec "$_ommega_tool" --check --apply "$_ommega_policy_rule"
+    case $? in
+      0) printf 'present\n' ;;
+      3) printf 'missing\n' ;;
+      *) printf 'unknown\n' ;;
+    esac
+    return 0
+  done
+  printf 'unknown\n'
+}
+
 ommega_apply_sepolicy() {
   _OMMEGA_POLICY_RULE=$1
   _OMMEGA_POLICY_LOG=$2
@@ -145,6 +163,13 @@ ommega_apply_sepolicy() {
   for _ommega_cand in $(_ommega_policy_ksud_candidates); do
     _ommega_tool=$(_ommega_policy_resolve "$_ommega_cand") || continue
     if _ommega_policy_exec "$_ommega_tool" sepolicy apply "$_OMMEGA_POLICY_RULE"; then
+      # ksud 的 rc=0 只说明「解析没报错」，不保证写进内核：PKG110 上 KernelSU 1.4.5
+      # 实测 apply 完 avc 照旧、`--check` 仍报缺。所以有自带那份就拿它复核一次，
+      # 真缺就继续往下走 —— 下一级是直接写 /sys/fs/selinux/load，那是真的。
+      if [ "$(ommega_sepolicy_rule_state "$_OMMEGA_POLICY_RULE")" = "missing" ]; then
+        _ommega_policy_log "ksud reported ok but rules still missing; falling through"
+        continue
+      fi
       _ommega_policy_log "ok $_ommega_tool sepolicy apply"
       printf '%s\n' "$_ommega_tool sepolicy apply"
       return 0
