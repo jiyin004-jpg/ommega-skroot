@@ -158,6 +158,25 @@ ommega_apply_sepolicy() {
     return 1
   fi
 
+  # 0) SKRoot：管理器的 `ksud sepolicy apply` 在真机上是「rc=0 但一条规则都没进内核」。
+  #    2026-11-08 一加 PKX110（Android 16）实测：apply 日志写着 ok，payload 在 keystore2
+  #    里连自己的日志都写不进（EACCES），所有出证请求透传给系统 keymint，应用拿 -74。
+  #    这里的 ksud 是 sevenk 那一层的兼容入口，没有复核价值，直接走模块自带那份：
+  #    它自己写 /sys/fs/selinux/load，省掉中间商。
+  if [ "${SKROOT_MODE:-0}" = "1" ]; then
+    for _ommega_cand in $(_ommega_policy_bundled_candidates); do
+      _ommega_tool=$(_ommega_policy_resolve "$_ommega_cand") || continue
+      if _ommega_policy_exec_logged "$_ommega_tool" --live --apply "$_OMMEGA_POLICY_RULE"; then
+        _ommega_policy_log "ok $_ommega_tool --live --apply (skroot bundled)"
+        printf '%s\n' "$_ommega_tool --live --apply"
+        return 0
+      fi
+      _ommega_policy_log "fail $_ommega_tool --live --apply (skroot bundled)"
+    done
+    _ommega_policy_report_candidates
+    return 1
+  fi
+
   # 1) KernelSU 系：整份文件一次 apply（ksud 自己的解析器按行读，列表长度有上限，
   #    sepolicy.rule 里已经按它的上限拆好了）。
   for _ommega_cand in $(_ommega_policy_ksud_candidates); do
