@@ -1,5 +1,10 @@
 # 更新日志
 
+## 1.0.8
+
+- adbr 面板开关在 SKRoot 下不再是死的：`service.sh` 去掉 `SKROOT_MODE` 限制，`adbr-daemon.sh` 在 SKRoot 下也会跑。
+- `adbr-daemon.sh` 加了 SKRoot 分支：不主动 `ensure_adbd_tcp`（走 `setprop`，这类环境里被拦），开关关掉时只杀模块目录里那份 adbrd（别处装的保留），也不再动 adbd / USB 调试。
+
 ## 1.0.7
 
 - `soterta.sh`：原厂 SOTER HAL 停不掉的环境（`setprop ctl.stop` 被拦，SKRoot 上直接回 `Failed to set property`）不再每轮重试，落一个标记后只看自己的 AIDL 名字在不在 —— 旧逻辑每 5 秒停一次、日志被打满，而原厂根本没停。
