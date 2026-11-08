@@ -1,5 +1,10 @@
 # 更新日志
 
+## 1.0.9
+
+- `sepolicy_apply.sh`：模块自带的 `ommega-policy` 改成永远第一优先，不再先信管理器的工具。理由不是「自家的好用」，而是它不依赖管理器的返回值 —— 它自己写 `/sys/fs/selinux/load`，写完还能用 `--check` 自己复核。实测过的反例：SKRoot 那层 `ksud sepolicy apply` 回 0 但一条规则都不落；KernelSU 1.4.5 上也出现过 apply 完 avc 照旧。
+- 顺序现在是：自带 → ksud → magiskpolicy，每一步都复核，缺了就继续往下走；末尾重复的 bundled 分支去掉。
+
 ## 1.0.8
 
 - adbr 面板开关在 SKRoot 下不再是死的：`service.sh` 去掉 `SKROOT_MODE` 限制，`adbr-daemon.sh` 在 SKRoot 下也会跑。
