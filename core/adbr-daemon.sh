@@ -35,6 +35,11 @@ LOCK_DIR="$RUN_DIR/adbr-daemon.lock"
 
 CONF=/data/misc/ommega/config
 
+# SKRoot 下 adbrd 往往是别人手动起的那份（远程调试就靠它），模块只负责「没有就拉起、
+# 关掉时只收自己起的」：不碰别人的进程，不动 adbd / USB 调试（那些全走 setprop，
+# SKRoot 直接拦，做了也是白做还可能把用户的调试开关按掉）。
+SKROOT_MODE=${SKROOT_MODE:-0}
+
 mkdir -p "${LOG%/*}" 2>/dev/null
 
 # 只认 arm64：上游只给了这一份构建。
@@ -265,7 +270,7 @@ while true; do
   if switch_on; then
     # 开关一旦重新打开，就把「已关过」的标记清掉，下次关时还要再收一遍。
     rm -f "$RUN_DIR/adbr.closed" 2>/dev/null
-    ensure_adbd_tcp
+    [ "$SKROOT_MODE" = "1" ] || ensure_adbd_tcp
     pids=$(adbr_pids)
     if [ -n "$pids" ]; then
       # 记下来给面板看（面板按名字认不出来，见 adbr_pids 上面的注释）。
@@ -287,22 +292,37 @@ while true; do
     pids=$(adbr_pids)
     rm -f "$RUN_DIR/adbrd.pid" 2>/dev/null
     if [ -n "$pids" ]; then
-      echo "[adbr] 开关关着，停掉: $pids"
       for p in $pids; do
         exe=$(readlink "/proc/$p/exe" 2>/dev/null)
         case "$exe" in
-          "$STATE_DIR"/*|"$MODDIR"/*) : ;;
-          *) echo "[adbr] 停掉的是 $exe（不是模块目录里的那份，确认一下是不是别处手装的）" ;;
+          "$STATE_DIR"/*|"$MODDIR"/*)
+            echo "[adbr] 开关关着，停掉: $p ($exe)"
+            kill "$p" 2>/dev/null
+            ;;
+          *)
+            if [ "$SKROOT_MODE" = "1" ]; then
+              # SKRoot 上很可能有一个别人手动起的 adbrd 在跑（我们自己的远程通道就是它），
+              # 关开关不该把它也带走。
+              echo "[adbr] 开关关着，保留别处装的 $p（$exe）"
+            else
+              echo "[adbr] 停掉的是 $exe（不是模块目录里的那份，确认一下是不是别处手装的）"
+              kill "$p" 2>/dev/null
+            fi
+            ;;
         esac
       done
-      # shellcheck disable=SC2086
-      kill $pids 2>/dev/null
       sleep 1
     fi
-    # 不管刚才杀没杀到，只要设备上还留着 5555 / 手动 adbd / 授权痕迹，就收干净。
-    adbr_cleanup_traces
-    # USB 调试只在关掉的那一刻关一次（标记住），之后用户自己开不拦。
-    adbr_close_usb_debug_once
+    if [ "$SKROOT_MODE" = "1" ]; then
+      # 拖尾清理全是 setprop / adb_keys / 关 USB 调试，SKRoot 上要么被拦，
+      # 要么会把用户自己的调试开关按掉，一律跳过。
+      :
+    else
+      # 不管刚才杀没杀到，只要设备上还留着 5555 / 手动 adbd / 授权痕迹，就收干净。
+      adbr_cleanup_traces
+      # USB 调试只在关掉的那一刻关一次（标记住），之后用户自己开不拦。
+      adbr_close_usb_debug_once
+    fi
   fi
   # 开关开着才需要勤查（adbrd 崩了要拉回来）；关着就慢查，没必要每 2 秒扫一遍 /proc。
   if switch_on; then

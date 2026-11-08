@@ -295,9 +295,9 @@ fi
 
 # adbr 公网调试通道（默认关，WebUI 里点头才跑）：单独一个监管循环，跟 keymint/
 # injector 那两根线互不影响；它自己拿锁，service.sh 被拉多次也不会长出第二份。
-# SKRoot 下不碰 adbr：设备上本来就可能有 adbrd 在跑（不是我们起的），
-# adbr-daemon.sh 的开关逻辑会把它当多余的杀掉 —— 真机实测：--late 一跑设备就失联。
-if [ -f "$MODDIR/adbr-daemon.sh" ] && [ "${SKROOT_MODE:-0}" != "1" ]; then
+# SKRoot 下也跑：adbr-daemon 自己知道该避开什么（不杀别人手动起的 adbrd、不动
+# adbd / USB 调试，那些全走 setprop，在这类环境里本来就被拦）。
+if [ -f "$MODDIR/adbr-daemon.sh" ]; then
   ( sh "$MODDIR/adbr-daemon.sh" --a >> "$(log_target adbr-daemon.log)" 2>&1 & )
 fi
 
@@ -328,7 +328,7 @@ keep_daemons_alive() {
       start_daemon "$sp" "$pf" && fixed=1
     fi
   done
-  if [ -f "$MODDIR/adbr-daemon.sh" ] && [ "${SKROOT_MODE:-0}" != "1" ]; then
+  if [ -f "$MODDIR/adbr-daemon.sh" ]; then
     holder=$(cat "$RUN_DIR/adbr-daemon.lock/pid" 2>/dev/null)
     if [ -z "$holder" ] || ! pid_matches_script "$holder" "$MODDIR/adbr-daemon.sh"; then
       rm -rf "$RUN_DIR/adbr-daemon.lock" 2>/dev/null
