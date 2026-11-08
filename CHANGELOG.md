@@ -1,5 +1,9 @@
 # 更新日志
 
+## 1.0.7
+
+- `soterta.sh`：原厂 SOTER HAL 停不掉的环境（`setprop ctl.stop` 被拦，SKRoot 上直接回 `Failed to set property`）不再每轮重试，落一个标记后只看自己的 AIDL 名字在不在 —— 旧逻辑每 5 秒停一次、日志被打满，而原厂根本没停。
+
 ## 1.0.6
 
 - 修掉 `soterta.sh` 的单实例锁：部分环境里 `flock` 对任何 fd 都回 EBADF（不是「被别人占」），旧写法 `flock -n 9 || exit 0` 让脚本每一轮都静默退出，SOTER 一次都没接管过。现在先探测 flock 能不能用，不能用退回 `mkdir` 目录锁。
